@@ -72,16 +72,21 @@ with st.sidebar:
     st.write(f"{selected_model} classes")
     st.write(", ".join(model.names.values()))
 
-camera_mode = st.checkbox("Enable live camera detection")
+camera_mode = st.selectbox(
+    "Camera mode",
+    ["Upload image", "Snapshot camera", "Live camera"],
+    index=1,
+    help="Snapshot camera works without WebRTC STUN/TURN configuration. Live camera requires a working TURN server on some networks.",
+)
 super_speed_mode = False
-if camera_mode:
+if camera_mode == "Live camera":
     super_speed_mode = st.checkbox(
         "Super speed mode",
         value=False,
         help="Uses 320px inference, disables test-time augmentation, and processes every other frame for smoother video.",
     )
 
-if camera_mode:
+if camera_mode == "Live camera":
     try:
         import av
         import cv2
@@ -130,7 +135,10 @@ if camera_mode:
     )
     st.stop()
 
-uploaded = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png", "webp"])
+if camera_mode == "Snapshot camera":
+    uploaded = st.camera_input("Take a picture")
+else:
+    uploaded = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png", "webp"])
 
 if uploaded is None:
     st.info("Choose an image above to begin.")
