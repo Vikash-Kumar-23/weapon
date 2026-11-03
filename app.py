@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
 from PIL import Image
 from ultralytics import YOLO
@@ -24,6 +25,28 @@ st.caption("Upload an image and run the trained YOLO model to view detected obje
 @st.cache_resource
 def load_model(model_path: str) -> YOLO:
     return YOLO(model_path)
+
+
+@st.cache_data(ttl=3600)
+def get_ice_servers() -> list[dict]:
+    """Return TURN servers when configured, with a public STUN fallback."""
+    fallback = [{"urls": ["stun:stun.l.google.com:19302"]}]
+    turn_key_id = st.secrets.get("CLOUDFLARE_TURN_KEY_ID")
+    turn_api_token = st.secrets.get("CLOUDFLARE_TURN_KEY_API_TOKEN")
+    if not turn_key_id or not turn_api_token:
+        return fallback
+
+    try:
+        response = requests.post(
+            f"https://rtc.live.cloudflare.com/v1/turn/keys/{turn_key_id}/credentials/generate-ice-servers",
+            headers={"Authorization": f"Bearer {turn_api_token}"},
+            json={"ttl": 3600},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()["iceServers"]
+    except (requests.RequestException, KeyError, TypeError, ValueError):
+        return fallback
 
 with st.sidebar:
     st.header("Settings")
@@ -101,9 +124,7 @@ if camera_mode:
         key="live-detector",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=Detector,
-        rtc_configuration={
-            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}],
-        },
+        rtc_configuration={"iceServers": get_ice_servers()},
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True,
     )
