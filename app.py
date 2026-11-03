@@ -101,6 +101,9 @@ if camera_mode:
         key="live-detector",
         mode=WebRtcMode.SENDRECV,
         video_processor_factory=Detector,
+        rtc_configuration={
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}],
+        },
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True,
     )
