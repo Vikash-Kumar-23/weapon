@@ -1,0 +1,5 @@
+streamlit>=1.52
+ultralytics>=8.4
+pandas
+pillow
+streamlit-webrtc>=0.47
