@@ -10,7 +10,10 @@ from ultralytics import YOLO
 
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "best.pt"
+MODEL_PATHS = {
+    "YOLO 8": BASE_DIR / "best.pt",
+    "YOLO 11": BASE_DIR / "best (2).pt",
+}
 
 st.set_page_config(page_title="Object Detector", page_icon="🔎", layout="wide")
 
@@ -19,16 +22,18 @@ st.caption("Upload an image and run the trained YOLO model to view detected obje
 
 
 @st.cache_resource
-def load_model() -> YOLO:
-    return YOLO(str(MODEL_PATH))
-
-
-if not MODEL_PATH.exists():
-    st.error(f"Model file not found: {MODEL_PATH}")
-    st.stop()
+def load_model(model_path: str) -> YOLO:
+    return YOLO(model_path)
 
 with st.sidebar:
     st.header("Settings")
+    selected_model = st.selectbox("Model", list(MODEL_PATHS))
+    model_path = MODEL_PATHS[selected_model]
+    if not model_path.exists():
+        st.error(f"Model file not found: {model_path}")
+        st.stop()
+    model = load_model(str(model_path))
+
     confidence = st.slider("Confidence threshold", 0.05, 0.95, 0.25, 0.05)
     image_size = st.select_slider(
         "Inference size",
@@ -41,11 +46,17 @@ with st.sidebar:
         help="Uses test-time augmentation. Better for small or partially hidden objects, but slower.",
     )
     st.divider()
-    st.write("Model classes")
-    model = load_model()
+    st.write(f"{selected_model} classes")
     st.write(", ".join(model.names.values()))
 
 camera_mode = st.checkbox("Enable live camera detection")
+super_speed_mode = False
+if camera_mode:
+    super_speed_mode = st.checkbox(
+        "Super speed mode",
+        value=False,
+        help="Uses 320px inference, disables test-time augmentation, and processes every other frame for smoother video.",
+    )
 
 if camera_mode:
     try:
@@ -59,21 +70,33 @@ if camera_mode:
     class Detector(VideoProcessorBase):
         def __init__(self):
             self.confidence = confidence
-            self.image_size = image_size
+            self.super_speed = super_speed_mode
+            self.image_size = 320 if self.super_speed else image_size
+            self.accuracy_mode = False if self.super_speed else accuracy_mode
+            self.frame_count = 0
+            self.last_output = None
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
             image = frame.to_ndarray(format="bgr24")
+            self.frame_count += 1
+            if self.super_speed and self.last_output is not None and self.frame_count % 2 == 0:
+                return av.VideoFrame.from_ndarray(self.last_output, format="bgr24")
+
             result = model.predict(
                 source=image,
                 conf=self.confidence,
                 imgsz=self.image_size,
-                augment=accuracy_mode,
+                augment=self.accuracy_mode,
                 verbose=False,
             )[0]
-            return av.VideoFrame.from_ndarray(result.plot(), format="bgr24")
+            self.last_output = result.plot()
+            return av.VideoFrame.from_ndarray(self.last_output, format="bgr24")
 
     st.subheader("Live camera")
-    st.caption("Allow camera access when your browser asks. Click Stop to end the live stream.")
+    if super_speed_mode:
+        st.caption("Super speed mode: lower-resolution inference and frame skipping are enabled.")
+    else:
+        st.caption("Allow camera access when your browser asks. Click Stop to end the live stream.")
     webrtc_streamer(
         key="live-detector",
         mode=WebRtcMode.SENDRECV,
